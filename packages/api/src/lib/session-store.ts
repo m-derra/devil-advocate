@@ -72,8 +72,9 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
   // Build screenshots array
   const screenshots: Screenshot[] = [];
 
-  // Capture screenshots from URL if provided
-  if (projectUrl && isValidUrl(projectUrl)) {
+  // Capture screenshots from URL if provided (skip in production - Puppeteer needs Chrome)
+  const isProduction = process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT;
+  if (projectUrl && isValidUrl(projectUrl) && !isProduction) {
     try {
       console.log(`Capturing screenshots from ${projectUrl}...`);
       const captured = await captureScreenshots(projectUrl);
@@ -86,6 +87,8 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
       console.error("Failed to capture screenshots:", error);
       // Continue without screenshots - don't block session creation
     }
+  } else if (projectUrl && isProduction) {
+    console.log("Skipping URL screenshots in production (Puppeteer not available)");
   }
 
   // Add user-uploaded screenshots

@@ -5,12 +5,33 @@ export interface CapturedScreenshots {
   mobile: string; // base64
 }
 
+// Timeout wrapper to prevent hanging forever
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(message)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 export async function captureScreenshots(
+  url: string
+): Promise<CapturedScreenshots> {
+  // 60 second total timeout for screenshot capture
+  return withTimeout(captureScreenshotsInternal(url), 60000, "Screenshot capture timed out");
+}
+
+async function captureScreenshotsInternal(
   url: string
 ): Promise<CapturedScreenshots> {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+    ],
   });
 
   try {
