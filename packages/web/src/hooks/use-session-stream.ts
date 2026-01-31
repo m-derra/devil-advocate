@@ -85,13 +85,20 @@ export function useSessionStream(sessionId: string | undefined) {
           setState((prev) => {
             const newActiveAgents = new Set(prev.activeAgents);
             newActiveAgents.delete(critique.type);
+
+            // Prevent duplicates - only add if this type doesn't exist yet
+            const existingTypes = prev.session?.critiques.map((c) => c.type) || [];
+            const updatedCritiques = existingTypes.includes(critique.type)
+              ? prev.session?.critiques || []
+              : [...(prev.session?.critiques || []), critique];
+
             return {
               ...prev,
               activeAgents: newActiveAgents,
               session: prev.session
                 ? {
                     ...prev.session,
-                    critiques: [...prev.session.critiques, critique],
+                    critiques: updatedCritiques,
                   }
                 : null,
             };

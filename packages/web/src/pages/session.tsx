@@ -562,10 +562,8 @@ export function SessionPage() {
 
         {/* Critiques by type - full details when complete, agent panels when loading */}
         {isComplete ? (
-          // Full critique cards when complete - dedupe by type
-          session.critiques
-            .filter((c, i, arr) => arr.findIndex((x) => x.type === c.type) === i)
-            .map((critiqueResult) => {
+          // Full critique cards when complete (dedupe handles any legacy bad data)
+          [...new Map(session.critiques.map((c) => [c.type, c])).values()].map((critiqueResult) => {
             const typeInfo = critiqueTypeLabels[critiqueResult.type];
             return (
               <section
