@@ -148,6 +148,13 @@ export async function addCritiqueResult(
   const session = await getSession(sessionId);
   if (!session) throw new Error(`Session ${sessionId} not found`);
 
+  // Prevent duplicates - only add if this critique type doesn't exist yet
+  const existingTypes = session.critiques.map((c) => c.type);
+  if (existingTypes.includes(critique.type)) {
+    console.warn(`Critique type ${critique.type} already exists for session ${sessionId}, skipping`);
+    return;
+  }
+
   const updatedCritiques = [...session.critiques, critique];
 
   await db
