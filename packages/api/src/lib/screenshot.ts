@@ -71,7 +71,38 @@ async function captureScreenshotsInternal(
 export function isValidUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
+
+    // Only allow http/https
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    // Block internal/private IPs (SSRF protection)
+    const hostname = parsed.hostname.toLowerCase();
+    const blockedPatterns = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[01])\./,
+      /^192\.168\./,
+      /^0\./,
+      /^169\.254\./, // Link-local
+      /^::1$/,
+      /^fc00:/,
+      /^fe80:/,
+      /\.local$/,
+      /\.internal$/,
+      /\.localhost$/,
+    ];
+
+    for (const pattern of blockedPatterns) {
+      if (pattern.test(hostname)) {
+        console.warn(`Blocked internal URL: ${hostname}`);
+        return false;
+      }
+    }
+
+    return true;
   } catch {
     return false;
   }
