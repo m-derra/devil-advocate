@@ -3,7 +3,7 @@ import type { Feedback } from "@devil-advocate/shared";
 
 // Configure Airtable
 // Use Personal Access Token (PAT) - create at https://airtable.com/create/tokens
-const accessToken = process.env.AIRTABLE_PAT || process.env.AIRTABLE_API_KEY;
+const accessToken = process.env.AIRTABLE_PAT;
 const baseId = process.env.AIRTABLE_BASE_ID;
 const tableName = process.env.AIRTABLE_TABLE_NAME || "Feedback";
 
