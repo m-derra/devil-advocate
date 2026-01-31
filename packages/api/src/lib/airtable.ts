@@ -5,7 +5,7 @@ import type { Feedback } from "@devil-advocate/shared";
 // Use Personal Access Token (PAT) - create at https://airtable.com/create/tokens
 const accessToken = process.env.AIRTABLE_PAT;
 const baseId = process.env.AIRTABLE_BASE_ID;
-const tableName = process.env.AIRTABLE_TABLE_NAME || "Feedback";
+const tableName = process.env.AIRTABLE_TABLE_NAME || "Table 1";
 
 let base: Airtable.Base | null = null;
 
@@ -28,17 +28,23 @@ export async function syncFeedbackToAirtable(feedback: Feedback): Promise<void> 
   if (!airtableBase) return;
 
   try {
+    // Map to existing Airtable fields: "Name" and "Notes"
+    const name = `[${feedback.type}] ${feedback.category || "general"} - ${feedback.id.slice(0, 8)}`;
+    const notes = [
+      `Description: ${feedback.description}`,
+      `Type: ${feedback.type}`,
+      `Category: ${feedback.category || "N/A"}`,
+      `Session ID: ${feedback.sessionId || "N/A"}`,
+      `URL: ${feedback.url || "N/A"}`,
+      `Created: ${feedback.createdAt.toISOString()}`,
+      `ID: ${feedback.id}`,
+    ].join("\n");
+
     await airtableBase(tableName).create([
       {
         fields: {
-          ID: feedback.id,
-          Type: feedback.type,
-          Category: feedback.category || "",
-          Description: feedback.description,
-          "Session ID": feedback.sessionId || "",
-          URL: feedback.url || "",
-          "User Agent": feedback.userAgent || "",
-          "Created At": feedback.createdAt.toISOString(),
+          Name: name,
+          Notes: notes,
         },
       },
     ]);
