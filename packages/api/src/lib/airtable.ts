@@ -2,20 +2,21 @@ import Airtable from "airtable";
 import type { Feedback } from "@devil-advocate/shared";
 
 // Configure Airtable
-const apiKey = process.env.AIRTABLE_API_KEY;
+// Use Personal Access Token (PAT) - create at https://airtable.com/create/tokens
+const accessToken = process.env.AIRTABLE_PAT || process.env.AIRTABLE_API_KEY;
 const baseId = process.env.AIRTABLE_BASE_ID;
 const tableName = process.env.AIRTABLE_TABLE_NAME || "Feedback";
 
 let base: Airtable.Base | null = null;
 
 function getBase(): Airtable.Base | null {
-  if (!apiKey || !baseId) {
-    console.warn("Airtable not configured: missing AIRTABLE_API_KEY or AIRTABLE_BASE_ID");
+  if (!accessToken || !baseId) {
+    console.warn("Airtable not configured: missing AIRTABLE_PAT or AIRTABLE_BASE_ID");
     return null;
   }
 
   if (!base) {
-    Airtable.configure({ apiKey });
+    Airtable.configure({ apiKey: accessToken });
     base = Airtable.base(baseId);
   }
 
