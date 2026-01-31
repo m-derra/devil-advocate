@@ -1,0 +1,26 @@
+FROM oven/bun:1 AS base
+WORKDIR /app
+
+# Install dependencies
+FROM base AS deps
+COPY package.json bun.lock ./
+COPY packages/api/package.json ./packages/api/
+COPY packages/shared/package.json ./packages/shared/
+RUN bun install --frozen-lockfile
+
+# Build shared package
+FROM deps AS builder
+COPY packages/shared ./packages/shared
+COPY packages/api ./packages/api
+RUN cd packages/shared && bun run build
+
+# Production
+FROM base AS runner
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared ./packages/shared
+COPY --from=builder /app/packages/api ./packages/api
+
+WORKDIR /app/packages/api
+EXPOSE 3001
+CMD ["bun", "run", "start"]
