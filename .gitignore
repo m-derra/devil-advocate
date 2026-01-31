@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+
+# Skills (installed separately via skills.sh)
+.agents/
+.claude/skills/
+.codex/
+.cursor/

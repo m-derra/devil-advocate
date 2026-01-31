@@ -1,0 +1,16 @@
+{
+  "name": "devil-advocate",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:api": "bun run --filter api dev",
+    "dev:web": "bun run --filter web dev",
+    "build": "bun run --filter '*' build",
+    "db:generate": "bun run --filter api db:generate",
+    "db:migrate": "bun run --filter api db:migrate",
+    "db:push": "bun run --filter api db:push"
+  }
+}
