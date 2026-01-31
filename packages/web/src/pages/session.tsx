@@ -1,10 +1,36 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSessionStream } from "../hooks/use-session-stream";
 import { AgentPanel } from "../components/agent-panel";
-import { Loader2, FileText, AlertCircle, ArrowLeft, ExternalLink, Monitor, Smartphone, ImageIcon } from "lucide-react";
+import { CritiqueCard } from "../components/critique-card";
+import { useState, useEffect } from "react";
+import {
+  Loader2,
+  AlertCircle,
+  ArrowLeft,
+  ExternalLink,
+  Monitor,
+  Smartphone,
+  ImageIcon,
+  Download,
+  Copy,
+  Check,
+  AlertTriangle,
+  Shield,
+  Zap,
+  MessageSquarePlus,
+  X,
+} from "lucide-react";
 import type { CritiqueType } from "@devil-advocate/shared";
+import { submitFeedback } from "../lib/api";
 
 const critiqueTypes: CritiqueType[] = ["technical", "business", "ux", "pitch"];
+
+const critiqueTypeLabels: Record<CritiqueType, { title: string; icon: string }> = {
+  technical: { title: "Technical Critique", icon: "🔧" },
+  business: { title: "Business Critique", icon: "💼" },
+  ux: { title: "UX Critique", icon: "🎨" },
+  pitch: { title: "Pitch Critique", icon: "🎤" },
+};
 
 const statusMessages: Record<string, { text: string; subtext: string }> = {
   pending: { text: "Initializing", subtext: "Preparing critique session..." },
@@ -19,6 +45,40 @@ export function SessionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { session, isLoading, error, activeAgents, progress } = useSessionStream(id);
+  const [copied, setCopied] = useState(false);
+  const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
+  const [quickFeedback, setQuickFeedback] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
+  // Show feedback prompt after user has had time to review (10 seconds)
+  useEffect(() => {
+    if (session?.status === "completed" && !feedbackDismissed && !feedbackSubmitted) {
+      const timer = setTimeout(() => setShowFeedbackPrompt(true), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [session?.status, feedbackDismissed, feedbackSubmitted]);
+
+  const handleQuickFeedback = async () => {
+    if (!quickFeedback.trim() || !id) return;
+    setSubmittingFeedback(true);
+    try {
+      await submitFeedback({
+        type: "general",
+        category: "other",
+        description: quickFeedback,
+        sessionId: id,
+        url: window.location.href,
+      });
+      setFeedbackSubmitted(true);
+      setShowFeedbackPrompt(false);
+    } catch (err) {
+      console.error("Failed to submit feedback:", err);
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -59,22 +119,206 @@ export function SessionPage() {
     (session.critiques.length / 4) * 80 + (session.rebuttals.length > 0 ? 20 : 0)
   );
 
+  // Calculate stats for completed sessions
+  const totalCritiques = session.critiques.reduce((sum, c) => sum + c.critiques.length, 0);
+  const criticalCount = session.critiques.reduce(
+    (sum, c) => sum + c.critiques.filter((cr) => cr.severity === "critical").length,
+    0
+  );
+  const majorCount = session.critiques.reduce(
+    (sum, c) => sum + c.critiques.filter((cr) => cr.severity === "major").length,
+    0
+  );
+  const minorCount = session.critiques.reduce(
+    (sum, c) => sum + c.critiques.filter((cr) => cr.severity === "minor").length,
+    0
+  );
+
+  // Calculate Pitch Readiness Score
+  const calculateScore = () => {
+    // Use weighted severity system, normalized by total issues
+    const totalIssues = criticalCount + majorCount + minorCount;
+    if (totalIssues === 0) return 100;
+
+    // Weight: critical=3, major=2, minor=1
+    const weightedSum = criticalCount * 3 + majorCount * 2 + minorCount * 1;
+    const maxPossibleWeight = totalIssues * 3; // if all were critical
+
+    // Score based on how severe the issues are (not just count)
+    // 100 = all minor, ~33 = all critical
+    const severityScore = 100 - ((weightedSum / maxPossibleWeight) * 70);
+
+    // Bonus for having rebuttals prepared (up to 10 points)
+    const rebuttalBonus = Math.min(session.rebuttals.length * 2, 10);
+
+    // Penalty for high total count (more than 15 issues starts to hurt)
+    const countPenalty = Math.max(0, (totalIssues - 15) * 1.5);
+
+    return Math.max(10, Math.min(100, Math.round(severityScore + rebuttalBonus - countPenalty)));
+  };
+
+  const pitchScore = isComplete ? calculateScore() : 0;
+
+  const getScoreColor = (score: number) => {
+    if (score >= 65) return "text-green-400";
+    if (score >= 45) return "text-yellow-400";
+    if (score >= 30) return "text-orange-400";
+    return "text-red-400";
+  };
+
+  const getScoreLabel = (score: number) => {
+    if (score >= 75) return "Strong";
+    if (score >= 55) return "Good";
+    if (score >= 40) return "Fair";
+    if (score >= 25) return "Needs Work";
+    return "Critical";
+  };
+
+  const getScoreRingColor = (score: number) => {
+    if (score >= 65) return "#4ade80";
+    if (score >= 45) return "#facc15";
+    if (score >= 30) return "#fb923c";
+    return "#f87171";
+  };
+
+  // Get top 3 issues
+  const getTopIssues = () => {
+    const allCritiques = session.critiques.flatMap((c) =>
+      c.critiques.map((cr) => ({ ...cr, type: c.type }))
+    );
+    const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, suggestion: 3 };
+    return allCritiques
+      .sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3))
+      .slice(0, 3);
+  };
+
+  const topIssues = isComplete ? getTopIssues() : [];
+
+  // Markdown export
+  const generateMarkdown = () => {
+    if (!session) return "";
+    let md = `# Devil's Advocate Report\n\n`;
+    md += `## Project Idea\n\n${session.projectIdea}\n\n`;
+    if (session.projectUrl) {
+      md += `**Project URL:** ${session.projectUrl}\n\n`;
+    }
+    md += `---\n\n`;
+    for (const critique of session.critiques) {
+      md += `## ${critiqueTypeLabels[critique.type].title}\n\n`;
+      md += `**Summary:** ${critique.summary}\n\n`;
+      for (const c of critique.critiques) {
+        md += `### ${c.title}\n\n`;
+        md += `**Severity:** ${c.severity}\n\n`;
+        md += `${c.description}\n\n`;
+        md += `**Impact:** ${c.impact}\n\n`;
+        if (c.recommendation) {
+          md += `**Recommendation:** ${c.recommendation}\n\n`;
+        }
+        const rebuttal = session.rebuttals.find((r) => r.critiqueId === c.id);
+        if (rebuttal) {
+          md += `#### Prepared Defense\n\n`;
+          md += `${rebuttal.defense}\n\n`;
+        }
+        md += `---\n\n`;
+      }
+    }
+    return md;
+  };
+
+  const handleCopy = async () => {
+    const md = generateMarkdown();
+    await navigator.clipboard.writeText(md);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownload = () => {
+    const md = generateMarkdown();
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `devils-advocate-report-${id}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen">
+      {/* Feedback Prompt Modal */}
+      {showFeedbackPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="card rounded-2xl p-6 max-w-md w-full animate-slide-up">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[var(--color-ember)]/10 border border-[var(--color-ember)]/20 flex items-center justify-center">
+                  <MessageSquarePlus className="w-5 h-5 text-[var(--color-ember)]" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-semibold text-[var(--color-light)]">
+                    How was this critique?
+                  </h3>
+                  <p className="text-sm text-[var(--color-mist)]">
+                    Help us improve in 10 seconds
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFeedbackPrompt(false);
+                  setFeedbackDismissed(true);
+                }}
+                className="text-[var(--color-slate)] hover:text-[var(--color-mist)] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <textarea
+              value={quickFeedback}
+              onChange={(e) => setQuickFeedback(e.target.value)}
+              placeholder="Was anything missing? Too harsh? Not useful? Any feature you wish existed?"
+              rows={3}
+              className="input w-full mb-4 text-sm"
+              autoFocus
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowFeedbackPrompt(false);
+                  setFeedbackDismissed(true);
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                Skip
+              </button>
+              <button
+                onClick={handleQuickFeedback}
+                disabled={!quickFeedback.trim() || submittingFeedback}
+                className="btn btn-primary flex-1"
+              >
+                {submittingFeedback ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Send Feedback"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="glass sticky top-0 z-20 border-b border-[var(--color-ash)]">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-              <Link
-                to="/devil"
-                className="btn btn-ghost p-2 rounded-lg flex-shrink-0"
-              >
+              <Link to="/devil" className="btn btn-ghost p-2 rounded-lg flex-shrink-0">
                 <ArrowLeft className="w-5 h-5" />
               </Link>
 
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                {/* Animated flame */}
                 <svg viewBox="0 0 100 100" className="w-8 h-8 sm:w-10 sm:h-10 animate-flame flex-shrink-0">
                   <defs>
                     <linearGradient id="headerFlame" x1="0%" y1="100%" x2="0%" y2="0%">
@@ -91,30 +335,32 @@ export function SessionPage() {
 
                 <div className="min-w-0">
                   <h1 className="font-display text-lg sm:text-xl font-semibold text-[var(--color-light)] truncate">
-                    {statusInfo.text}
+                    {isComplete ? "Critique Report" : statusInfo.text}
                   </h1>
                   <p className="text-xs sm:text-sm text-[var(--color-mist)] truncate">
-                    {statusInfo.subtext}
+                    {isComplete ? "Your complete analysis" : statusInfo.subtext}
                   </p>
                 </div>
               </div>
             </div>
 
             {isComplete && (
-              <button
-                onClick={() => navigate(`/devil/report/${id}`)}
-                className="btn btn-primary text-sm px-3 py-2 sm:px-4 sm:py-2 flex-shrink-0"
-              >
-                <FileText className="w-4 h-4" />
-                <span className="hidden sm:inline">View Report</span>
-                <span className="sm:hidden">Report</span>
-              </button>
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                <button onClick={handleCopy} className="btn btn-secondary text-xs sm:text-sm px-2 sm:px-3 py-2">
+                  {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                  <span className="hidden sm:inline">{copied ? "Copied!" : "Copy"}</span>
+                </button>
+                <button onClick={handleDownload} className="btn btn-primary text-xs sm:text-sm px-2 sm:px-3 py-2">
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
       </header>
 
-      {/* Progress bar */}
+      {/* Progress bar - only show when not complete */}
       {!isComplete && (
         <div className="sticky top-[57px] sm:top-[73px] z-10 bg-[var(--color-void)]">
           <div className="h-1 bg-[var(--color-shadow)]">
@@ -123,7 +369,7 @@ export function SessionPage() {
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2">
             <p className="text-xs font-mono text-[var(--color-slate)]">
               {session.critiques.length}/4 critics complete
             </p>
@@ -131,16 +377,146 @@ export function SessionPage() {
         </div>
       )}
 
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+      <main className="max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        {/* Score Card - only show when complete */}
+        {isComplete && (
+          <div className="card rounded-2xl sm:rounded-3xl p-6 sm:p-8 mb-4 sm:mb-8 animate-fade-in">
+            <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10">
+              {/* Score Circle */}
+              <div className="relative w-32 h-32 sm:w-40 sm:h-40 flex-shrink-0">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-ash)" strokeWidth="12" />
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    fill="none"
+                    stroke={getScoreRingColor(pitchScore)}
+                    strokeWidth="12"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(pitchScore / 100) * 327} 327`}
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className={`font-display text-4xl sm:text-5xl font-bold ${getScoreColor(pitchScore)}`}>
+                    {pitchScore}
+                  </span>
+                  <span className="text-xs text-[var(--color-mist)] font-mono uppercase tracking-wider">/ 100</span>
+                </div>
+              </div>
+
+              {/* Score Details */}
+              <div className="flex-1 text-center sm:text-left">
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-[var(--color-light)] mb-2">
+                  Pitch Readiness: <span className={getScoreColor(pitchScore)}>{getScoreLabel(pitchScore)}</span>
+                </h2>
+                <p className="text-sm sm:text-base text-[var(--color-mist)] mb-4">
+                  {pitchScore >= 65
+                    ? "Your project is well-prepared. Address the remaining issues and you'll be ready to impress the judges."
+                    : pitchScore >= 45
+                    ? "Your project has potential. Focus on the critical and major issues before pitching."
+                    : pitchScore >= 30
+                    ? "Several significant issues need attention. Prioritize the critical problems first."
+                    : "Your project has many areas to address. Review the critical issues carefully and prepare strong rebuttals."}
+                </p>
+                <div className="flex flex-wrap justify-center sm:justify-start gap-3 text-xs font-mono">
+                  <span className="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                    {criticalCount} critical
+                  </span>
+                  <span className="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                    {majorCount} major
+                  </span>
+                  <span className="px-2 py-1 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                    {minorCount} minor
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Top Issues - only show when complete */}
+        {isComplete && topIssues.length > 0 && (
+          <div className="card rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-8 animate-fade-in">
+            <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mb-3 flex items-center gap-2">
+              <span>⚡</span> Top Issues to Address
+            </h3>
+            <div className="space-y-3">
+              {topIssues.map((issue, i) => (
+                <div key={issue.id} className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--color-shadow)] border border-[var(--color-ash)] flex items-center justify-center text-xs font-bold text-[var(--color-mist)]">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className={`text-xs font-mono uppercase px-1.5 py-0.5 rounded ${
+                          issue.severity === "critical"
+                            ? "bg-red-500/10 text-red-400"
+                            : issue.severity === "major"
+                            ? "bg-orange-500/10 text-orange-400"
+                            : "bg-yellow-500/10 text-yellow-400"
+                        }`}
+                      >
+                        {issue.severity}
+                      </span>
+                      <span className="text-xs text-[var(--color-slate)]">{issue.type}</span>
+                    </div>
+                    <p className="text-sm sm:text-base text-[var(--color-light)] font-medium">{issue.title}</p>
+                    {issue.recommendation && (
+                      <p className="text-xs sm:text-sm text-[var(--color-mist)] mt-1 line-clamp-2">
+                        💡 {issue.recommendation}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stats cards - only show when complete */}
+        {isComplete && (
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-8 animate-fade-in">
+            <div className="card rounded-xl sm:rounded-2xl p-3 sm:p-6 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1 sm:mb-2">
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-amber)]" />
+              </div>
+              <div className="font-display text-2xl sm:text-4xl font-bold text-gradient">{totalCritiques}</div>
+              <div className="text-[10px] sm:text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mt-1">
+                Total Issues
+              </div>
+            </div>
+
+            <div className="card rounded-xl sm:rounded-2xl p-3 sm:p-6 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1 sm:mb-2">
+                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-flame)]" />
+              </div>
+              <div className="font-display text-2xl sm:text-4xl font-bold text-[var(--color-flame)]">{criticalCount}</div>
+              <div className="text-[10px] sm:text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mt-1">
+                Critical
+              </div>
+            </div>
+
+            <div className="card rounded-xl sm:rounded-2xl p-3 sm:p-6 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1 sm:mb-2">
+                <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-green-500" />
+              </div>
+              <div className="font-display text-2xl sm:text-4xl font-bold text-green-400">{session.rebuttals.length}</div>
+              <div className="text-[10px] sm:text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mt-1">
+                Defenses
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Project summary */}
-        <div className="card rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-8 animate-slide-up">
+        <div className="card rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-8">
           <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mb-2 sm:mb-3">
             Your Project Idea
           </h2>
-          <p className="text-[var(--color-light)] leading-relaxed text-base sm:text-lg">
-            {session.projectIdea}
-          </p>
+          <p className="text-[var(--color-light)] leading-relaxed text-base sm:text-lg">{session.projectIdea}</p>
 
           {session.projectUrl && (
             <div className="mt-3 sm:mt-4 flex items-center gap-2 min-w-0">
@@ -182,42 +558,77 @@ export function SessionPage() {
               </div>
             </div>
           )}
-
-          {session.hackathonContext && (
-            <div className="mt-4 sm:mt-5 pt-4 sm:pt-5 border-t border-[var(--color-ash)]">
-              <h3 className="text-xs font-mono uppercase tracking-wider text-[var(--color-mist)] mb-2 sm:mb-3 flex items-center gap-2">
-                <span className="text-base">🏆</span> Hackathon Context
-              </h3>
-              <p className="text-xs sm:text-sm text-[var(--color-cloud)] whitespace-pre-wrap">
-                {session.hackathonContext}
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Agent panels grid */}
-        <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
-          {critiqueTypes.map((type, i) => {
-            const result = session.critiques.find((c) => c.type === type);
-            const rebuttals = session.rebuttals.filter((r) => r.critiqueType === type);
-
+        {/* Critiques by type - full details when complete, agent panels when loading */}
+        {isComplete ? (
+          // Full critique cards when complete
+          session.critiques.map((critiqueResult) => {
+            const typeInfo = critiqueTypeLabels[critiqueResult.type];
             return (
-              <div
-                key={type}
-                className="opacity-0 animate-slide-up"
-                style={{ animationDelay: `${0.1 + i * 0.1}s` }}
+              <section
+                key={critiqueResult.type}
+                className="mb-6 sm:mb-10"
               >
-                <AgentPanel
-                  type={type}
-                  result={result}
-                  rebuttals={rebuttals}
-                  isActive={activeAgents.has(type)}
-                  progress={progress[type]}
-                />
-              </div>
+                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                  <span className="text-xl sm:text-2xl">{typeInfo.icon}</span>
+                  <h2 className="font-display text-xl sm:text-2xl font-semibold text-[var(--color-light)]">
+                    {typeInfo.title}
+                  </h2>
+                </div>
+
+                <div className="card rounded-lg sm:rounded-xl p-3 sm:p-4 mb-3 sm:mb-4 flex items-start gap-2 sm:gap-3">
+                  <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-amber)] flex-shrink-0 mt-0.5" />
+                  <p className="text-xs sm:text-base text-[var(--color-cloud)] leading-relaxed">
+                    {critiqueResult.summary}
+                  </p>
+                </div>
+
+                <div className="space-y-2 sm:space-y-3">
+                  {critiqueResult.critiques.map((critique) => (
+                    <CritiqueCard
+                      key={critique.id}
+                      critique={critique}
+                      rebuttal={session.rebuttals.find((r) => r.critiqueId === critique.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             );
-          })}
-        </div>
+          })
+        ) : (
+          // Agent panels when loading
+          <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
+            {critiqueTypes.map((type) => {
+              const result = session.critiques.find((c) => c.type === type);
+              const rebuttals = session.rebuttals.filter((r) => r.critiqueType === type);
+
+              return (
+                <div key={type}>
+                  <AgentPanel
+                    type={type}
+                    result={result}
+                    rebuttals={rebuttals}
+                    isActive={activeAgents.has(type)}
+                    progress={progress[type]}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer CTA */}
+        {isComplete && (
+          <div className="text-center py-12 border-t border-[var(--color-ash)]">
+            <Link
+              to="/devil"
+              className="text-[var(--color-ember)] hover:text-[var(--color-spark)] transition-colors font-medium"
+            >
+              Start a new critique →
+            </Link>
+          </div>
+        )}
       </main>
     </div>
   );

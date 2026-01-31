@@ -1,5 +1,5 @@
 import type { Critique, CritiqueType, RebuttalResult } from "@devil-advocate/shared";
-import { streamCompletion } from "../lib/claude.js";
+import { streamCompletion } from "../lib/gemini.js";
 import { getSessionEmitter } from "../lib/event-emitter.js";
 
 const SYSTEM_PROMPT = `You are a Defense Strategist helping hackathon teams prepare rebuttals to critiques.

@@ -7,7 +7,7 @@ import type {
   Severity,
   Screenshot,
 } from "@devil-advocate/shared";
-import { streamCompletion, type ImageInput } from "../lib/claude.js";
+import { streamCompletion, type ImageInput } from "../lib/gemini.js";
 import { getSessionEmitter } from "../lib/event-emitter.js";
 import { v4 as uuid } from "uuid";
 
