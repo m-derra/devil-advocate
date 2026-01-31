@@ -52,10 +52,10 @@ export function SessionPage() {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
-  // Show feedback prompt after user has had time to review (10 seconds)
+  // Show feedback prompt after user has had time to review (5 seconds)
   useEffect(() => {
     if (session?.status === "completed" && !feedbackDismissed && !feedbackSubmitted) {
-      const timer = setTimeout(() => setShowFeedbackPrompt(true), 10000);
+      const timer = setTimeout(() => setShowFeedbackPrompt(true), 5000);
       return () => clearTimeout(timer);
     }
   }, [session?.status, feedbackDismissed, feedbackSubmitted]);
@@ -256,10 +256,10 @@ export function SessionPage() {
                 </div>
                 <div>
                   <h3 className="font-display text-lg font-semibold text-[var(--color-light)]">
-                    How was this critique?
+                    How did you like the app?
                   </h3>
                   <p className="text-sm text-[var(--color-mist)]">
-                    Help us improve in 10 seconds
+                    What could we improve?
                   </p>
                 </div>
               </div>
@@ -277,7 +277,7 @@ export function SessionPage() {
             <textarea
               value={quickFeedback}
               onChange={(e) => setQuickFeedback(e.target.value)}
-              placeholder="Was anything missing? Too harsh? Not useful? Any feature you wish existed?"
+              placeholder="Any feedback helps! Missing features, bugs, things you loved..."
               rows={3}
               className="input w-full mb-4 text-sm"
               autoFocus
