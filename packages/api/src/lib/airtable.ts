@@ -50,5 +50,5 @@ export async function syncFeedbackToAirtable(feedback: Feedback): Promise<void> 
 }
 
 export function isAirtableConfigured(): boolean {
-  return Boolean(apiKey && baseId);
+  return Boolean(accessToken && baseId);
 }
